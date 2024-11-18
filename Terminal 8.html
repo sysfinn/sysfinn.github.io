@@ -140,7 +140,7 @@
 
         //Typing text function
 
-        function typeText(text,increment = 1, index, audio, terminal, currentWord = '', currentSpan = null, speed = 1, callback = null) {
+        function typeText(text,increment = 1, index, audio, terminal, currentWord = '', currentSpan = null, speed = 5, callback = null) {
             if (index < text.length) {
                 let currentChars = text.substring(index, index + increment); // Get characters based on the increment
 
