@@ -200,7 +200,7 @@
             if (callback) callback();  // Execute callback if provided
         }
 
-        function startTransmission(text, increment = 1, cssClass = '', typingSpeed = 2, callback = null) {
+        function startTransmission(text, increment = 1, cssClass = '', typingSpeed = 1, callback = null) {
             const audio = document.getElementById('typing-sound');
             const terminal = document.getElementById('terminal');
             const messageContainer = document.createElement('div');
