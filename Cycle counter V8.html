@@ -1,0 +1,353 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Cycle Counter</title>
+    <style>
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background-color: #f5f6fa;
+            color: #333;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            margin: 0;
+            padding: 20px;
+        }
+        h2, h3 {
+            color: #3f51b5;
+            text-align: center;
+        }
+
+        .container {
+            width: 90%;
+            max-width: 650px;
+            background-color: #ffffff;
+            padding: 20px;
+            border-radius: 8px;
+            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
+            margin-bottom: 20px;
+        }
+
+        input[type="text"], input[type="number"], textarea {
+            width: calc(100% - 20px);
+            padding: 10px;
+            margin-bottom: 15px;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+            font-size: 16px;
+            transition: border-color 0.3s;
+            font-family: inherit;
+        }
+
+        button {
+            background-color: #3f51b5;
+            color: white;
+            border: none;
+            padding: 10px 20px;
+            font-size: 16px;
+            font-family: inherit;
+            border-radius: 4px;
+            cursor: pointer;
+            transition: background-color 0.3s;
+            margin-top: 10px;
+            width: 100%;
+        }
+
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            margin-top: 20px;
+        }
+        th, td {
+            border: 1px solid #ddd;
+            padding: 10px;
+            text-align: center;
+            font-size: 16px;
+        }
+        th {
+            background-color: #3f51b5;
+            color: white;
+            font-weight: bold;
+        }
+        td {
+            background-color: #f7f7f7;
+        }
+        .quantity-input {
+            width: 60px;
+            text-align: center;
+            padding: 5px;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+        }
+
+        #finalList {
+            display: none;
+            margin-top: 30px;
+            padding: 20px;
+            background-color: #f1f1f1;
+            border-radius: 8px;
+            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
+        }
+        #finalList h3 {
+            color: #3f51b5;
+            text-align: center;
+            font-size: 20px;
+            margin-bottom: 20px;
+        }
+        #copyableListContainer {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            margin-top: 15px;
+        }
+        #copyableList {
+            width: 100%;
+            height: 100px;
+            font-size: 16px;
+            padding: 10px;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+            resize: none;
+            font-family: inherit;
+            background-color: #f7f7f7;
+        }
+    </style>
+</head>
+<body>
+    <h2>Barcode Scanner Cycle Counter</h2>
+
+    <div class="container">
+        <input type="text" id="barcodeInput" placeholder="Scan barcode here" autofocus>
+    </div>
+
+    <div class="container">
+        <h3>Scanned and Entered Items</h3>
+        <table>
+            <thead>
+                <tr>
+                    <th>Part Number</th>
+                    <th>Control Number</th>
+                    <th>Scanned Quantity</th>
+                    <th>Action</th>
+                </tr>
+            </thead>
+            <tbody id="scannedTableBody"></tbody>
+        </table>
+    </div>
+    
+    <div class="center-button">
+        <button onclick="finishScanning()">Finish</button>
+    </div>
+
+    <div id="finalList">
+        <h3>Final Comparison of Scanned Items</h3>
+        <table>
+            <thead>
+                <tr>
+                    <th>Part Number</th>
+                    <th>Control Number</th>
+                    <th>Scanned Quantity</th>
+                </tr>
+            </thead>
+            <tbody id="comparisonTableBody"></tbody>
+        </table>
+    </div>
+
+    <div id="copyableListContainer">
+        <button onclick="generateCopyableList()">Generate Copyable List</button>
+        <button onclick="copyToClipboard()">Copy to Clipboard</button>
+        <textarea id="copyableList" readonly placeholder="Part numbers, control numbers, and scanned quantities will appear here..."></textarea>
+        <button onclick="downloadPartNumbersFile()">Download Part Numbers File</button>
+    </div>
+
+    <script>
+        const scannedItems = [];
+
+        function parseBarcode(barcodeInput) {
+            const parts = barcodeInput.trim().split(/\s+/);
+            if (parts.length < 1) {
+                throw new Error("Invalid barcode format");
+            }
+            const partNumber = parts[0];
+            let quantity;
+
+            if (parts.length === 1) {
+                quantity = parseInt(prompt("Enter quantity for part number " + partNumber + ":"), 10);
+                if (isNaN(quantity) || quantity < 0) {
+                    throw new Error("Invalid quantity entered. Please enter 0 or a positive number.");
+                }
+            } else {
+                quantity = parseInt(parts[1], 10);
+                if (isNaN(quantity) || quantity < 0) {
+                    throw new Error("Invalid quantity format in barcode. Please enter 0 or a positive number.");
+                }
+            }
+
+            return { partNumber, quantity };
+        }
+
+        function promptForControlNumber() {
+            const controlNumber = prompt("Scan or enter control number:");
+            if (!controlNumber) {
+                throw new Error("Control number is required.");
+            }
+            return controlNumber;
+        }
+
+        function addBarcode(barcodeInput) {
+            try {
+                const { partNumber, quantity } = parseBarcode(barcodeInput);
+                const controlNumber = promptForControlNumber();
+                addOrUpdateItem(partNumber, quantity, controlNumber);
+            } catch (error) {
+                alert(error.message);
+            }
+        }
+
+        function addOrUpdateItem(partNumber, quantity, controlNumber) {
+            const existingItem = scannedItems.find(item => item.partNumber === partNumber && item.controlNumber === controlNumber);
+
+            if (existingItem) {
+                existingItem.quantity += quantity;
+            } else {
+                scannedItems.push({ partNumber, quantity, controlNumber });
+            }
+            displayScannedItems();
+        }
+
+        function displayScannedItems() {
+            const tableBody = document.getElementById("scannedTableBody");
+            tableBody.innerHTML = ""; // Clear existing rows
+
+            scannedItems.slice().reverse().forEach((item, index) => {
+                const row = document.createElement("tr");
+
+                const partNumberCell = document.createElement("td");
+                partNumberCell.textContent = item.partNumber;
+                row.appendChild(partNumberCell);
+
+                const controlNumberCell = document.createElement("td");
+                controlNumberCell.textContent = item.controlNumber;
+                row.appendChild(controlNumberCell);
+
+                const quantityCell = document.createElement("td");
+                const quantityInput = document.createElement("input");
+                quantityInput.type = "number";
+                quantityInput.value = item.quantity;
+                quantityInput.min = "0";
+                quantityInput.className = "quantity-input";
+                quantityInput.addEventListener("change", (event) => updateQuantity(scannedItems.length - 1 - index, event.target.value));
+                quantityCell.appendChild(quantityInput);
+                row.appendChild(quantityCell);
+
+                const actionCell = document.createElement("td");
+                const deleteButton = document.createElement("button");
+                deleteButton.textContent = "Delete";
+                deleteButton.onclick = () => deleteItem(scannedItems.length - 1 - index);
+                actionCell.appendChild(deleteButton);
+                row.appendChild(actionCell);
+
+                tableBody.appendChild(row);
+            });
+        }
+
+        function updateQuantity(index, newQuantity) {
+            newQuantity = parseInt(newQuantity, 10);
+            if (isNaN(newQuantity) || newQuantity < 0) {
+                alert("Please enter a valid quantity.");
+                displayScannedItems();
+                return;
+            }
+            scannedItems[index].quantity = newQuantity;
+            displayScannedItems();
+        }
+
+        function deleteItem(index) {
+            const confirmDelete = confirm("Are you sure you want to delete this item?");
+            if (confirmDelete) {
+                scannedItems.splice(index, 1);
+                displayScannedItems();
+            }
+        }
+
+        function finishScanning() {
+            displayComparison();
+        }
+
+        function displayComparison() {
+            const comparisonTableBody = document.getElementById("comparisonTableBody");
+            comparisonTableBody.innerHTML = "";
+
+            scannedItems.slice().reverse().forEach(scannedItem => {
+                const row = document.createElement("tr");
+
+                const partNumberCell = document.createElement("td");
+                partNumberCell.textContent = scannedItem.partNumber;
+                row.appendChild(partNumberCell);
+
+                const controlNumberCell = document.createElement("td");
+                controlNumberCell.textContent = scannedItem.controlNumber;
+                row.appendChild(controlNumberCell);
+
+                const scannedQuantityCell = document.createElement("td");
+                scannedQuantityCell.textContent = scannedItem.quantity;
+                row.appendChild(scannedQuantityCell);
+
+                comparisonTableBody.appendChild(row);
+            });
+
+            document.getElementById("finalList").style.display = "block";
+        }
+
+        function generateCopyableList() {
+            const headers = "Part Number\tControl Number\tScanned Quantity";
+            const dataRows = scannedItems
+                .slice()
+                .reverse()
+                .map(item => `${item.partNumber}\t${item.controlNumber}\t${item.quantity}`)
+                .join('\n');
+            
+            const copyableListContent = `${headers}\n${dataRows}`;
+            document.getElementById("copyableList").value = copyableListContent;
+        }
+
+        function downloadPartNumbersFile() {
+            const uniquePartNumbers = Array.from(new Set(scannedItems.map(item => item.partNumber))).join('\n');
+            const blob = new Blob([uniquePartNumbers], { type: 'text/plain' });
+            const link = document.createElement('a');
+            link.href = URL.createObjectURL(blob);
+            link.download = 'unique_part_numbers.txt';
+            document.body.appendChild(link);
+            link.click();
+            document.body.removeChild(link);
+        }
+
+        document.getElementById("barcodeInput").addEventListener("keypress", (event) => {
+            if (event.key === "Enter") {
+                const barcodeInput = event.target.value.trim();
+                if (barcodeInput.length > 0) {
+                    addBarcode(barcodeInput);
+                    event.target.value = "";
+                }
+            }
+        });
+
+        function copyToClipboard() {
+            const copyableList = document.getElementById("copyableList").value.trim();
+            
+            if (!copyableList) {
+                alert("There is nothing to copy. Please generate the list first.");
+                return;
+            }
+
+            navigator.clipboard.writeText(copyableList).then(() => {
+                alert("Copied to clipboard!");
+            }).catch(err => {
+                console.error("Could not copy text: ", err);
+            });
+        }
+    </script>
+</body>
+</html>
