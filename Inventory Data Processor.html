@@ -1,0 +1,278 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Inventory Data Processor</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            margin: 20px;
+        }
+        h1, h2 {
+            color: #333;
+        }
+        .file-input {
+            margin-bottom: 20px;
+        }
+        #output {
+            margin-top: 20px;
+        }
+        ul {
+            list-style-type: none;
+            padding: 0;
+        }
+        li {
+            margin: 5px 0;
+        }
+        .btn {
+            padding: 10px 15px;
+            color: white;
+            background-color: #007BFF;
+            border: none;
+            border-radius: 5px;
+            cursor: pointer;
+        }
+        .btn:hover {
+            background-color: #0056b3;
+        }
+    </style>
+</head>
+<body>
+    <h1>SKU Data Processor</h1>
+
+    <div class="file-input">
+        <label for="fileInput">Upload Main CSV (SKU Data):</label>
+        <input type="file" id="fileInput" />
+    </div>
+    <div class="file-input">
+        <label for="categoryFileInput">Upload Category CSV (Labels):</label>
+        <input type="file" id="categoryFileInput" />
+    </div>
+    <button id="processBtn" class="btn">Process Data</button>
+
+    <div id="output"></div>
+
+    <script>
+        let mainCSVData = null;
+        let categoryMapping = {};
+
+        document.getElementById('fileInput').addEventListener('change', event => {
+            const file = event.target.files[0];
+            if (!file) return;
+
+            const reader = new FileReader();
+            reader.onload = function (e) {
+                mainCSVData = e.target.result;
+                alert("Main CSV loaded successfully!");
+            };
+            reader.readAsText(file);
+        });
+
+        document.getElementById('categoryFileInput').addEventListener('change', event => {
+            const file = event.target.files[0];
+            if (!file) return;
+
+            const reader = new FileReader();
+            reader.onload = function (e) {
+                categoryMapping = mapCategories(e.target.result);
+                alert("Category mapping loaded successfully!");
+            };
+            reader.readAsText(file);
+        });
+
+        function mapCategories(csvText) {
+            const rows = csvText.split('\n').filter(row => row.trim());
+            const headers = rows[0].split(',').map(h => h.trim().replace(/^"|"$/g, ''));
+            const data = rows.slice(1).map(row =>
+                row.split(',').map(cell => cell.trim().replace(/^"|"$/g, ''))
+            );
+
+            const mapping = {};
+            data.forEach(row => {
+                const level3ID = row[headers.indexOf('Level 3 ID')];
+                mapping[level3ID] = {
+                    level1Label: row[headers.indexOf('Level 1 Label')],
+                    level1ID: row[headers.indexOf('Level 1 ID')],
+                    level2Label: row[headers.indexOf('Level 2 Label')],
+                    level2ID: row[headers.indexOf('Level 2 ID')],
+                    level3Label: row[headers.indexOf('Level 3 Label')],
+                    level3ID: row[headers.indexOf('Level 3 ID')]
+                };
+            });
+
+            return mapping;
+        }
+
+        document.getElementById('processBtn').addEventListener('click', () => {
+            if (!mainCSVData) {
+                alert("Please upload the main CSV file first!");
+                return;
+            }
+            if (Object.keys(categoryMapping).length === 0) {
+                alert("Please upload the category CSV file first!");
+                return;
+            }
+
+            const results = processMainCSV(mainCSVData);
+            displayResults(results);
+            downloadJSON(results, "sku_data_with_last_sale.json");
+            generateCSV(results, "processed_sku_data.csv");
+        });
+
+        function processMainCSV(csvText) {
+            const rows = csvText.split('\n').filter(row => row.trim());
+            const headers = rows[0].split(',').map(h => h.trim().replace(/^"|"$/g, ''));
+            const data = rows.slice(1).map(row =>
+                row.split(',').map(cell => cell.trim().replace(/^"|"$/g, ''))
+            );
+
+            const monthColumns = headers.filter(header => header.match(/^\w{3}-\d{2}$/));
+
+            const results = [];
+            const currentMonthIndex = monthColumns.length - 1;
+
+            data.forEach(row => {
+                const originalFields = {};
+                headers.forEach((header, i) => {
+                    originalFields[header] = row[i] || '';
+                });
+
+                const qoh = parseFloat(originalFields['QOH'] || 0);
+                const value = parseFloat(originalFields['Value'] || 0);
+                const min = parseFloat(originalFields['Min'] || 0);
+                const max = parseFloat(originalFields['Max'] || 0);
+
+                let unitValue = qoh > 0 ? value / qoh : 0;
+
+                let lastMonthSold = null;
+                let monthsSinceLastSold = null;
+
+                for (let i = 0; i < monthColumns.length; i++) {
+                    const month = monthColumns[i];
+                    const sales = parseFloat(originalFields[month] || 0);
+
+                    if (sales > 0) {
+                        lastMonthSold = month;
+                        monthsSinceLastSold = currentMonthIndex - i;
+                    }
+                }
+
+                const categoryID = originalFields['Category'];
+                const category = categoryMapping[categoryID] || {
+                    level1Label: 'Unknown',
+                    level2Label: 'Unknown',
+                    level3Label: 'Unknown'
+                };
+
+                const record = {
+                    ...originalFields,
+                    'Unit Value': unitValue.toFixed(2),
+                    'Min Value': (min * unitValue).toFixed(2),
+                    'QOH Over Min': (qoh - min).toFixed(2),
+                    'Value Over Min': ((qoh - min) * unitValue).toFixed(2),
+                    'Max Value': (max * unitValue).toFixed(2),
+                    'QOH Over Max': (qoh - max).toFixed(2),
+                    'Value Over Max': ((qoh - max) * unitValue).toFixed(2),
+                    'Last Month Sold': lastMonthSold || 'No Sales',
+                    'Months Since Last Sold': monthsSinceLastSold !== null ? monthsSinceLastSold : 'N/A',
+                    'Category Hierarchy': {
+                        Level1: category.level1Label,
+                        Level2: category.level2Label,
+                        Level3: category.level3Label
+                    }
+                };
+
+                results.push(record);
+            });
+
+            return results;
+        }
+
+        function displayResults(results) {
+            const outputDiv = document.getElementById('output');
+            outputDiv.innerHTML = '<h2>Results:</h2>';
+
+            const ul = document.createElement('ul');
+            results.forEach(result => {
+                const li = document.createElement('li');
+                li.textContent = JSON.stringify(result);
+                ul.appendChild(li);
+            });
+
+            outputDiv.appendChild(ul);
+        }
+
+        function downloadJSON(data, filename) {
+    const jsonString = JSON.stringify(data, null, 2);
+    const blob = new Blob([jsonString], { type: "application/json" });
+    const link = document.createElement("a");
+    link.href = URL.createObjectURL(blob);
+
+    // Prompt for confirmation
+    if (confirm(`Do you want to download the file: ${filename}?`)) {
+        link.download = filename;
+        link.click();
+    } else {
+        alert("Download canceled.");
+    }
+}
+
+function generateCSV(data, filename) {
+    const headers = [
+        "SKU",
+        "Item description",
+        "Value",
+        "Unit Value",
+        "QOH",
+        "Min",
+        "Max",
+        "Months Since Last Sold",
+        "Level 1",
+        "Level 2",
+        "Level 3",
+        "QOH Over Min",
+        "Value Over Min",
+        "QOH Over Max",
+        "Value Over Max",
+        "Last Month Sold",
+        "Category ID"
+    ];
+
+    const rows = data.map(record => [
+        record["Item Id"] || "",
+        record["Item description"] || "",
+        record["Value"] || "",
+        record["Unit Value"] || "",
+        record["QOH"] || "",
+        record["Min"] || "",
+        record["Max"] || "",
+        record["Months Since Last Sold"] || "",
+        record["Category Hierarchy"].Level1 || "",
+        record["Category Hierarchy"].Level2 || "",
+        record["Category Hierarchy"].Level3 || "",
+        record["QOH Over Min"] || "",
+        record["Value Over Min"] || "",
+        record["QOH Over Max"] || "",
+        record["Value Over Max"] || "",
+        record["Last Month Sold"] || "",
+        record["Category"] || ""
+    ]);
+
+    const csvContent = [headers.join(","), ...rows.map(row => row.join(","))].join("\n");
+
+    const blob = new Blob([csvContent], { type: "text/csv" });
+    const link = document.createElement("a");
+    link.href = URL.createObjectURL(blob);
+
+    // Prompt for confirmation
+    if (confirm(`Do you want to download the file: ${filename}?`)) {
+        link.download = filename;
+        link.click();
+    } else {
+        alert("Download canceled.");
+    }
+}
+    </script>
+</body>
+</html>
