@@ -1,0 +1,94 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Inventory Tracker</title>
+</head>
+<body>
+  <h1>Inventory Tracker</h1>
+  <p>Upload your CSV file (must end in date format mmddyyyy):</p>
+  <input type="file" id="csvFile" accept=".csv">
+  <p>Upload your existing JSON master file (optional):</p>
+  <input type="file" id="jsonFile" accept=".json">
+  <button id="processFiles">Process Files</button>
+  <button id="saveJson" style="display: none;">Save Master JSON</button>
+  <pre id="output"></pre>
+
+  <script>
+    document.getElementById('processFiles').addEventListener('click', processFiles);
+    document.getElementById('saveJson').addEventListener('click', saveJson);
+
+    let masterJson = {};
+
+    function processFiles() {
+      const csvFile = document.getElementById('csvFile').files[0];
+      const jsonFile = document.getElementById('jsonFile').files[0];
+
+      if (!csvFile) {
+        alert('Please upload a CSV file.');
+        return;
+      }
+
+      const reader = new FileReader();
+      reader.onload = () => {
+        const csvData = reader.result;
+        const records = parseCSV(csvData);
+        const date = csvFile.name.match(/\d{8}/) ? csvFile.name.match(/\d{8}/)[0] : "UnknownDate";
+
+        if (jsonFile) {
+          const jsonReader = new FileReader();
+          jsonReader.onload = () => {
+            masterJson = JSON.parse(jsonReader.result);
+            updateMasterJson(records, date);
+          };
+          jsonReader.readAsText(jsonFile);
+        } else {
+          masterJson = {};
+          updateMasterJson(records, date);
+        }
+      };
+      reader.readAsText(csvFile);
+    }
+
+    function parseCSV(csv) {
+      const lines = csv.split('\n').filter(line => line.trim());
+      const headers = lines[0].split(',');
+      const records = lines.slice(1).map(line => {
+        const values = line.split(',');
+        return headers.reduce((acc, header, i) => {
+          acc[header.replace(/\"/g, '').trim()] = values[i].replace(/\"/g, '').trim();
+          return acc;
+        }, {});
+      });
+      return records;
+    }
+
+    function updateMasterJson(records, date) {
+      records.forEach(record => {
+        const itemId = record["Item Id"];
+        if (!masterJson[itemId]) {
+          masterJson[itemId] = [];
+        }
+        masterJson[itemId].push({
+          date: date,
+          QOH: record["QOH"],
+          Value: record["Value"],
+          Floor: record["Floor"],
+          Held: record["Held"]
+        });
+      });
+      document.getElementById('output').textContent = JSON.stringify(masterJson, null, 2);
+      document.getElementById('saveJson').style.display = 'inline';
+    }
+
+    function saveJson() {
+      const blob = new Blob([JSON.stringify(masterJson, null, 2)], { type: 'application/json' });
+      const link = document.createElement('a');
+      link.href = URL.createObjectURL(blob);
+      link.download = 'master_inventory.json';
+      link.click();
+    }
+  </script>
+</body>
+</html>
